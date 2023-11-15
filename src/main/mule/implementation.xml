@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="f5372bb2-fed6-4ce9-80ee-7e077a6e98c6" >
+		<vm:connection />
+		<vm:queues >
+			<vm:queue queueName="newPages" />
+		</vm:queues>
+	</vm:config>
+	<flow name="health_check_flow" doc:id="4ce06e13-81e6-4409-a425-b9b5f3278db0" >
+		<logger level="INFO" doc:name="Logger" doc:id="75b9368d-dc7a-49ee-b6bb-76fd1cac36cb" />
+		<scatter-gather doc:name="Scatter-Gather" doc:id="f167e582-f81d-4a16-a0e4-dc0116fd471f" >
+			<route >
+				<http:request method="GET" doc:name="Request" doc:id="33a61a24-639a-4364-b20b-c0ffc86a4c2c" config-ref="PG_HTTP_Request_configuration" path="/V1/pg/sapi/health" />
+			</route>
+			<route >
+				<http:request method="GET" doc:name="Request" doc:id="13d2b2b1-7955-4044-b778-c82c62597f58" config-ref="PG_HTTP_Request_configuration" path="/v1/sf/sapi/health" sendCorrelationId="ALWAYS" />
+			</route>
+		</scatter-gather>
+		<ee:transform doc:name="Transform Message" doc:id="4e7906c1-62ca-4f4b-9257-2e55f704a650" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+import every from dw::core::Arrays
+var allSuccess= payload..payload.status every( $~= "running")
+---
+if(allSuccess)  {"status": "running"}else {"status": "not-running"}
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="693db65b-216a-411b-84c0-7516b80ea067" />
+	</flow>
+	<sub-flow name="get-postgres-businesses-data" doc:id="0d42c387-2289-4c1e-98fb-0f6292d3b91e">
+		<logger level="INFO" doc:name="Logger" doc:id="3bc88fea-5a85-4a15-8bcc-6fa8f8145065" message="triggering migrate flow" />
+		<http:request method="GET" doc:name="Request" doc:id="d7ff0a47-aba8-440d-8096-c6ce4236f30c" config-ref="PG_HTTP_Request_configuration" path="/V1/pg/sapi/businesses" sendCorrelationId="ALWAYS">
+						<http:query-params><![CDATA[#[{
+	limit: vars.params.limit default 100,
+	page: vars.params.page default 1,
+	offset: vars.params.offset default 0
+	//offset: (vars.params.limit * (vars.params.page - 1)) + vars.params.offset
+	
+	}]]]></http:query-params>
+		</http:request>
+<ee:transform doc:name="Transform Message" doc:id="8e34d673-f38e-49bd-af40-e2aab3f60599">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload.data map (item, indexOfPayload) -> {
+    "OrganizationName": item.OrganizationName,
+    "Address": item.Address,
+    "City": item.City,
+     "State": item.State,
+    "Zip": item.Zip,
+    "PhoneNumber": (item.PhoneNumber replace "-" with "" ) as Number,
+    "Revenue":item.Revenue as Number  
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<http:request method="POST" doc:name="Request" doc:id="8e0315c5-f5e7-4c21-828e-3ae5a5cbb1e4" config-ref="PG_HTTP_Request_configuration" path="/v1/sf/sapi/organizations" />
+		<!-- [STUDIO:"isComplete"]		<set-variable value="#[payload.page ~= (payload.totalRecords / payload.recordsPerPage)&#93;" doc:name="isComplete" doc:id="81eaa746-2495-41ce-9449-d1ff690e4a5e" variableName="isComplete"/> [STUDIO] -->
+		<logger level="INFO" doc:name="Logger" doc:id="e1e1f955-e607-4c92-9b5f-33d0874f0201" message="businesses data recieved"/>
+	</sub-flow>
+	<flow name="create-sf-organizations" doc:id="ef07ffaa-30bd-4eb2-a604-210af4bd0f9f">
+		<logger level="INFO" doc:name="Logger" doc:id="561e570b-c4bb-43fa-9cec-9ca99eeee67b" message="triggeting POST /organizations"/>
+		<logger level="INFO" doc:name="Logger" doc:id="5786e4ff-18c3-44f7-80cd-fcd51ee06b71" message="Recieved Response from POST /organizations"/>
+	</flow>
+	<flow name="migrateFlow" doc:id="a42f1c08-f11c-4f3a-acff-91bf2e93cace">
+		<vm:listener doc:name="Listener" doc:id="9266be0c-6a42-492d-9259-b69107825924" config-ref="VM_Config" queueName="newPages">
+		</vm:listener>
+		<ee:transform doc:name="vars: params" doc:id="bffd27bc-e60f-487a-8416-c4d83744f818" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	page: payload.page default 1,
+	offset: payload.offset default 0,
+	limit: payload.limit default 100
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="get-postgres-businesses-data" doc:id="876cdbe4-8daf-4504-9e8c-be1f32a46ed4" name="get-postgres-businesses-data" />
+		<flow-ref doc:name="create-sf-organizations" doc:id="e7cbb07e-15b3-4d22-aac0-a2b76b6f0acd" name="create-sf-organizations" />
+		<choice doc:name="Choice" doc:id="6612d712-4165-4b5f-919f-a1a741cd7691" >
+			<when expression="#[not(vars.isComplete)]">
+				<ee:transform doc:name="increment the page by 1" doc:id="c32475fb-88bb-42c9-90ef-5ebc51f55ce8" >
+					<ee:message >
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
+output application/json
+---
+vars.params update {
+	case .page -> ($+1)
+	
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<vm:publish doc:name="params to newPages queue" doc:id="99327764-889b-4814-aaf3-8a2360fd4fb4" config-ref="VM_Config" sendCorrelationId="ALWAYS" correlationId="#[correlationId]" queueName="newPages">
+					<vm:content ><![CDATA[#[vars.params]]]></vm:content>
+				</vm:publish>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="f0a158fd-fb0b-4989-81ad-5fcecf7bf0a3" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+"Message": "All Records from postgres migrated to  successfully"]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="e39ed37d-000c-4ebe-804b-035b71a04edb" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	created: payload.created
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	
+</flow>
+</mule>

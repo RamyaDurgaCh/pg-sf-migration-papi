@@ -1,0 +1,20 @@
+#%RAML 1.0
+title: orgs-migration-papi
+description: This API specification is for Migrating the Legacy Postgres SAPI to Salesforce custom Object.This API Specification will be involved in a Process API where we perform the 
+protocols: [HTTP, HTTPS]
+baseUri: /api/{version}/orgs-migration-papi
+version: v1
+mediaType: [application/json]
+
+types:
+  healthCheck: !include dataTypes/healthCheckDataType.raml
+
+/health:
+  get:
+    responses:
+      200:
+        body:
+          type: healthCheck
+
+
+

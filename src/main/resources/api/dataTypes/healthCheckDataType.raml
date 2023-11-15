@@ -1,0 +1,12 @@
+#%RAML 1.0 DataType
+properties:
+  status:
+    type: string
+    enum: [running, not-running]
+    example: "running"
+  timeStamp:
+    type: datetime-only
+    example: "2023-10-17T12:10:00"
+  error?:
+    type: string
+    example: "Unable to connect"
