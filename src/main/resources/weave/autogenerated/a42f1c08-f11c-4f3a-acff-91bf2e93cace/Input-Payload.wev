@@ -1,4 +1,0 @@
-%dw 2.0
-
-type auto_a42f1c08_f11c_4f3a_acff_91bf2e93cace_Input_Payload = {| message: String |}
-

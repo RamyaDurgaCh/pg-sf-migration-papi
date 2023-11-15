@@ -14,6 +14,11 @@ http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/cu
 			<vm:queue queueName="newPages" />
 		</vm:queues>
 	</vm:config>
+	<flow name="sf-organizations" doc:id="b031fcac-e6c5-40d2-ad63-ef7ed6611a45" >
+		<logger level="INFO" doc:name="Logger" doc:id="f646bada-afc5-4b86-93b9-bdbdd550b5ff" message="sf-organizations start logger"/>
+		<http:request method="POST" doc:name="Request" doc:id="8e0315c5-f5e7-4c21-828e-3ae5a5cbb1e4" config-ref="PG_HTTP_Request_configuration" path="/v1/sf/sapi/organizations" />
+		<logger level="INFO" doc:name="Logger" doc:id="1e0938be-890a-4988-93c1-a7c259431721" message="sf-organizations-end-logger"/>
+	</flow>
 	<flow name="health_check_flow" doc:id="4ce06e13-81e6-4409-a425-b9b5f3278db0" >
 		<logger level="INFO" doc:name="Logger" doc:id="75b9368d-dc7a-49ee-b6bb-76fd1cac36cb" />
 		<scatter-gather doc:name="Scatter-Gather" doc:id="f167e582-f81d-4a16-a0e4-dc0116fd471f" >
@@ -44,11 +49,13 @@ if(allSuccess)  {"status": "running"}else {"status": "not-running"}
 	limit: vars.params.limit default 100,
 	page: vars.params.page default 1,
 	offset: vars.params.offset default 0
+	//offset: vars.params.offset default 0
 	//offset: (vars.params.limit * (vars.params.page - 1)) + vars.params.offset
 	
 	}]]]></http:query-params>
 		</http:request>
-<ee:transform doc:name="Transform Message" doc:id="8e34d673-f38e-49bd-af40-e2aab3f60599">
+<set-variable value="#[payload.page ~= (payload.totalRecords / payload.recordsPerPage)]" doc:name="isComplete" doc:id="51075521-3bb8-4ec7-89df-9216cf522623" variableName="isComplete"/>
+		<ee:transform doc:name="Transform Message" doc:id="8e34d673-f38e-49bd-af40-e2aab3f60599">
 			<ee:message>
 				<ee:set-payload><![CDATA[%dw 2.0
 output application/json
@@ -64,15 +71,26 @@ payload.data map (item, indexOfPayload) -> {
 }]]></ee:set-payload>
 			</ee:message>
 		</ee:transform>
-		<http:request method="POST" doc:name="Request" doc:id="8e0315c5-f5e7-4c21-828e-3ae5a5cbb1e4" config-ref="PG_HTTP_Request_configuration" path="/v1/sf/sapi/organizations" />
-		<!-- [STUDIO:"isComplete"]		<set-variable value="#[payload.page ~= (payload.totalRecords / payload.recordsPerPage)&#93;" doc:name="isComplete" doc:id="81eaa746-2495-41ce-9449-d1ff690e4a5e" variableName="isComplete"/> [STUDIO] -->
+		<flow-ref doc:name="Flow Reference" doc:id="c9ed5530-4825-4004-895e-afdafb6a0f33" name="sf-organizations" />
+		<choice doc:name="Choice" doc:id="c10eeb35-4a58-4653-b722-f09ef0d50bb4" >
+			<when expression="#[not (vars.isComplete)]">
+				<ee:transform doc:name="increment page" doc:id="d130b3e5-abcf-4101-8477-ab00033d1f7d" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+vars.params update {
+	case .page -> ($ + 1)
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="Flow Reference" doc:id="42ef2bfd-e527-4086-9135-2fb3b087cb82" name="get-postgres-businesses-data"/>
+			</when>
+		</choice>
+<!-- [STUDIO:"isComplete"]				<set-variable value="#[payload.page ~= (payload.totalRecords / payload.recordsPerPage)&#93;" doc:name="isComplete" doc:id="81eaa746-2495-41ce-9449-d1ff690e4a5e" variableName="isComplete"/> [STUDIO] -->
 		<logger level="INFO" doc:name="Logger" doc:id="e1e1f955-e607-4c92-9b5f-33d0874f0201" message="businesses data recieved"/>
 	</sub-flow>
-	<flow name="create-sf-organizations" doc:id="ef07ffaa-30bd-4eb2-a604-210af4bd0f9f">
-		<logger level="INFO" doc:name="Logger" doc:id="561e570b-c4bb-43fa-9cec-9ca99eeee67b" message="triggeting POST /organizations"/>
-		<logger level="INFO" doc:name="Logger" doc:id="5786e4ff-18c3-44f7-80cd-fcd51ee06b71" message="Recieved Response from POST /organizations"/>
-	</flow>
-	<flow name="migrateFlow" doc:id="a42f1c08-f11c-4f3a-acff-91bf2e93cace">
+<!-- [STUDIO:"migrateFlow"]	<flow name="migrateFlow" doc:id="a42f1c08-f11c-4f3a-acff-91bf2e93cace">
 		<vm:listener doc:name="Listener" doc:id="9266be0c-6a42-492d-9259-b69107825924" config-ref="VM_Config" queueName="newPages">
 		</vm:listener>
 		<ee:transform doc:name="vars: params" doc:id="bffd27bc-e60f-487a-8416-c4d83744f818" >
@@ -81,33 +99,33 @@ payload.data map (item, indexOfPayload) -> {
 			<ee:variables >
 				<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
 output application/json
----
+&#45;&#45;-
 {
 	page: payload.page default 1,
 	offset: payload.offset default 0,
 	limit: payload.limit default 100
-}]]></ee:set-variable>
+}&#93;&#93;></ee:set-variable>
 			</ee:variables>
 		</ee:transform>
 		<flow-ref doc:name="get-postgres-businesses-data" doc:id="876cdbe4-8daf-4504-9e8c-be1f32a46ed4" name="get-postgres-businesses-data" />
 		<flow-ref doc:name="create-sf-organizations" doc:id="e7cbb07e-15b3-4d22-aac0-a2b76b6f0acd" name="create-sf-organizations" />
 		<choice doc:name="Choice" doc:id="6612d712-4165-4b5f-919f-a1a741cd7691" >
-			<when expression="#[not(vars.isComplete)]">
+			<when expression="#[not(vars.isComplete)&#93;">
 				<ee:transform doc:name="increment the page by 1" doc:id="c32475fb-88bb-42c9-90ef-5ebc51f55ce8" >
 					<ee:message >
 					</ee:message>
 					<ee:variables >
 						<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
 output application/json
----
+&#45;&#45;-
 vars.params update {
 	case .page -> ($+1)
 	
-}]]></ee:set-variable>
+}&#93;&#93;></ee:set-variable>
 					</ee:variables>
 				</ee:transform>
-				<vm:publish doc:name="params to newPages queue" doc:id="99327764-889b-4814-aaf3-8a2360fd4fb4" config-ref="VM_Config" sendCorrelationId="ALWAYS" correlationId="#[correlationId]" queueName="newPages">
-					<vm:content ><![CDATA[#[vars.params]]]></vm:content>
+				<vm:publish doc:name="params to newPages queue" doc:id="99327764-889b-4814-aaf3-8a2360fd4fb4" config-ref="VM_Config" sendCorrelationId="ALWAYS" correlationId="#[correlationId&#93;" queueName="newPages">
+					<vm:content ><![CDATA[#[vars.params&#93;&#93;&#93;></vm:content>
 				</vm:publish>
 			</when>
 			<otherwise >
@@ -115,8 +133,8 @@ vars.params update {
 					<ee:message >
 						<ee:set-payload ><![CDATA[%dw 2.0
 output application/json
----
-"Message": "All Records from postgres migrated to  successfully"]]></ee:set-payload>
+&#45;&#45;-
+"Message": "All Records from postgres migrated to  successfully"&#93;&#93;></ee:set-payload>
 					</ee:message>
 				</ee:transform>
 			</otherwise>
@@ -125,12 +143,12 @@ output application/json
 			<ee:message >
 				<ee:set-payload ><![CDATA[%dw 2.0
 output application/json
----
+&#45;&#45;-
 {
 	created: payload.created
-}]]></ee:set-payload>
+}&#93;&#93;></ee:set-payload>
 			</ee:message>
 		</ee:transform>
 	
-</flow>
+</flow> [STUDIO] -->
 </mule>

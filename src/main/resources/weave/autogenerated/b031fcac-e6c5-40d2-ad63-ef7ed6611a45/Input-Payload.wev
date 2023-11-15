@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_b031fcac_e6c5_40d2_ad63_ef7ed6611a45_Input_Payload = Any
+
