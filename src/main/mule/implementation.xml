@@ -44,15 +44,31 @@ if(allSuccess)  {"status": "running"}else {"status": "not-running"}
 	</flow>
 	<sub-flow name="get-postgres-businesses-data" doc:id="0d42c387-2289-4c1e-98fb-0f6292d3b91e">
 		<logger level="INFO" doc:name="Logger" doc:id="3bc88fea-5a85-4a15-8bcc-6fa8f8145065" message="triggering migrate flow" />
+		<ee:transform doc:name="Transform Message" doc:id="731a0512-1722-4f6a-bc6e-acdd9cb8fd45" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
+output application/json
+var params= attributes.queryParameters
+---
+
+{
+	limit:vars.params.limit default 100,
+	offset: vars.params.limit default 0,
+	page: vars.params.page default 1
+}
+	]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
 		<http:request method="GET" doc:name="Request" doc:id="d7ff0a47-aba8-440d-8096-c6ce4236f30c" config-ref="PG_HTTP_Request_configuration" path="/V1/pg/sapi/businesses" sendCorrelationId="ALWAYS">
-						<http:query-params><![CDATA[#[{
-	limit: vars.params.limit default 100,
-	page: vars.params.page default 1,
-	offset: vars.params.offset default 0
-	//offset: vars.params.offset default 0
-	//offset: (vars.params.limit * (vars.params.page - 1)) + vars.params.offset
-	
-	}]]]></http:query-params>
+						<http:query-params><![CDATA[#[output application/java
+---
+{
+	"limit" : vars.params.limit,
+	"offset": vars.params.offset default 0,
+	"page": vars.params.page
+}]]]></http:query-params>
 		</http:request>
 <set-variable value="#[payload.page ~= (payload.totalRecords / payload.recordsPerPage)]" doc:name="isComplete" doc:id="51075521-3bb8-4ec7-89df-9216cf522623" variableName="isComplete"/>
 		<ee:transform doc:name="Transform Message" doc:id="8e34d673-f38e-49bd-af40-e2aab3f60599">
@@ -76,13 +92,15 @@ payload.data map (item, indexOfPayload) -> {
 			<when expression="#[not (vars.isComplete)]">
 				<ee:transform doc:name="increment page" doc:id="d130b3e5-abcf-4101-8477-ab00033d1f7d" >
 					<ee:message >
-						<ee:set-payload ><![CDATA[%dw 2.0
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="params" ><![CDATA[%dw 2.0
 output application/java
 ---
 vars.params update {
 	case .page -> ($ + 1)
-}]]></ee:set-payload>
-					</ee:message>
+}]]></ee:set-variable>
+					</ee:variables>
 				</ee:transform>
 				<flow-ref doc:name="Flow Reference" doc:id="42ef2bfd-e527-4086-9135-2fb3b087cb82" name="get-postgres-businesses-data"/>
 			</when>
